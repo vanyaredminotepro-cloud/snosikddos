@@ -33,7 +33,7 @@ from flask_socketio import SocketIO, emit
 from flask_httpauth import HTTPBasicAuth
 
 # Pyrogram - ИСПРАВЛЕННЫЕ ИМПОРТЫ!
-from pyrogram import Client
+from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, UserAlreadyParticipant, PeerIdInvalid, InviteHashExpired, InviteHashInvalid
 from pyrogram.raw.functions.messages import ImportChatInvite, CheckChatInvite  # <--- ВАЖНО!
 from pyrogram.types import InputPhoneContact
@@ -52,18 +52,96 @@ DEFAULT_TARGET = "https://t.me/+vuft45R2wW1kNjFi"
 STICKER_IDS = [
     "CAACAgIAAxkBAAEQpN5poyqxZEIu0ckIDNuBjXQhJx_HdAACVpcAAg5nGUkME8ZzJeb0CDoE",
     "CAACAgIAAxkBAAEQpOBpoyqzX4T9RbGlTs7bRHTmbJwFYgACPYsAAuRdGUkgLA-N4YfYdDoE",
-    # ... остальные стикеры (вставь все 40 из твоего списка)
+    "CAACAgIAAxkBAAEQpOFpoyqzD1frms68wDUwg1tEtHmDhwACSJQAAuGJGEnTulOT2C5j8joE",
+    "CAACAgIAAxkBAAEQpORpoyq1EZV8Fsxo0uLmjt3xy84lVgAC_JIAAknfGUldvbWxv9kAAbI6BA",
+    "CAACAgIAAxkBAAEQpOVpoyq2gJdDtrwPHzXwqCW4vuOingACsZwAAobuGUnwuJ2bcy6RGjoE",
+    "CAACAgIAAxkBAAEQpOdpoyq3LPSJYlch-ablDAPEzNqRLgACaJkAAo4YGUkDlrZtEoqKBToE",
+    "CAACAgIAAxkBAAEQpOlpoyq31gVAYiEyDDEUHRJHeAABkfEAAn2TAAIzchlJX9dYGmkLJuk6BA",
+    "CAACAgIAAxkBAAEQpOppoyq44gABS6hm0zToZ6kCEpXiW2wAAvKVAAJD0RhJb62ix8LfkEk6BA",
+    "CAACAgIAAxkBAAEQpO5poyq8PLg5jimuluOhcC8juls72wACA44AAshzGUmQND1EN1iYkToE",
+    "CAACAgIAAxkBAAEQpPBpoyq-ZJKfU8LvMjNrP8TT-4nZ9QACJJsAAiMUEUkQXFu4GQWIlDoE",
+    "CAACAgIAAxkBAAEQpPJpoyrA3_K8SGVeRsBn0l_F_vuY5wACuqMAArDVGEm-cA_CwWqJEzoE",
+    "CAACAgIAAxkBAAEQpPRpoyrCttuKVpiyYChrIwWRq9QvHwACqpsAAraoGUktcd9Nf6BafDoE",
+    "CAACAgIAAxkBAAEQpPZpoyrEVkOZClGyCZCSbqiadkEN4gAC1IUAArxPGEkrWoqWcU3kmjoE",
+    "CAACAgIAAxkBAAEQpPhpoyrGtEGmOrmbtdBbQBAyxM8rlAACGooAAp5NGEkly7oI9QXg-DoE",
+    "CAACAgIAAxkBAAEQpPppoyrHFQVB_17H5XjodxHEtYJfggACaZQAAq0xEUkE1vTgRLaCuDoE",
+    "CAACAgIAAxkBAAEQpPxpoyrJ8Iy1PelVoRTFrKfJd12puQACmY4AAj6AGEmnrdRkLcSOhjoE",
+    "CAACAgIAAxkBAAEQpP5poyrL6hdkzzSVYHYdgPiyxGBDIgAC3JQAAgjpGUkC2UQiIqI1xDoE",
+    "CAACAgIAAxkBAAEQpQABaaMqze5xm_PQ0lCQtJ4jrTi8AnAAAgGVAAJMmhlJ8IYS6bgXQy86BA",
+    "CAACAgIAAxkBAAEQpQJpoyrOrfwuwIAyetSLLtPleHSsgwACd5AAAm8rGUmf91_vj4gZcjoE",
+    "CAACAgIAAxkBAAEQpQRpoyrQ7bQXPBJjT2Eo9zQ5XOlb9AAC85wAAo_KEEmNhFLeQmWRNjoE",
+    "CAACAgIAAxkBAAEQpQhpoyrnsJ__IBOLJRr6BFQ_VioAAVQAArOVAAK_xxhJEqYeGBvf1zs6BA",
+    "CAACAgIAAxkBAAEQpQppoyrpFbl76Yra8YH8ITHkan97YQACfJkAAl44GElU-DAPZAS2FDoE",
+    "CAACAgIAAxkBAAEQpQxpoyrs6A6WUKLqNuV7el6n690LPwAC05wAAu0gGElwj3cXVT0U6zoE",
+    "CAACAgIAAxkBAAEQpQ5poyrttnJkKyRfmlTXpi8J0sSh1wACVZMAAod7GUlQUb6lMhsdGzoE",
+    "CAACAgIAAxkBAAEQpRBpoyrvbrvecpErJhv9XZXewYroMQACA5MAAoHeGEm8tLlVyFZJgDoE",
+    "CAACAgIAAxkBAAEQpRJpoyrxG6tZ9nToky6iKXKsw294sAACFokAAlLOGEkTgp6ysblaMDoE",
+    "CAACAgIAAxkBAAEQpRRpoyryj3Oo90ePZ8AvGsd0EckH9AACNJwAAj2oGUmqRelGihFpvDoE",
+    "CAACAgIAAxkBAAEQpRZpoyr0ws3tSv85JdafXnZUVk0lhgACiZUAAl6HGUnEM4QqTr6K7ToE",
+    "CAACAgIAAxkBAAEQpRhpoyr1qqhmYkOwHqX0VqzyC-oImQACfY0AAjHIGEn1pmuvN4z9QjoE",
+    "CAACAgIAAxkBAAEQpRppoyr3c58ifW8eDjlXkGIhiNQcYQACMZ0AArOlGEnSuBSKlPt3TzoE",
+    "CAACAgIAAxkBAAEQpRxpoyr5fb3gqkfCP_7hExHMj5b9GgAC1pAAApjQGEkfaa-mw_mxZzoE",
+    "CAACAgIAAxkBAAEQpR5poyr6zq13Qxu7_rUbJxj9WBWl3wACwpcAAsScGUkIvnOUS8nnoToE",
+    "CAACAgIAAxkBAAEQpSNpoytfOizdITYqMfpBp8nJgg7B7gACkKIAAqVUGUloH6bbGynL3DoE",
+    "CAACAgIAAxkBAAEQpSVpoyth9LszFXuQtyGTNFb8MvarfwACjo8AAss8GUmcpKlwsEZY9DoE"
 ]
 
 SPAM_MESSAGES = ["Тимур доксик", "Тимур клык"]
 
 PROXIES = [
     "122.116.150.2:9000", "5.180.19.163:1080", "103.134.180.185:4153",
-    # ... все прокси (вставь свой полный список)
+    "70.166.167.38:57728", "213.5.197.61:1080", "50.223.239.161:80",
+    "51.254.149.59:56464", "199.168.175.179:80", "168.194.226.178:4153",
+    "113.160.58.230:4145", "34.92.250.88:11111", "116.202.235.157:63135",
+    "122.10.225.55:8000", "62.183.96.194:8080", "103.47.93.222:1080",
+    "102.39.68.76:8080", "180.210.222.201:1080", "107.181.130.52:5673",
+    "144.202.62.103:10119", "190.14.249.217:999", "149.102.130.120:80",
+    "115.84.248.140:8080", "212.132.68.226:8118", "136.60.0.212:80",
+    "50.218.204.96:80", "212.83.143.151:25571", "27.254.99.183:8118",
+    "104.239.52.97:7259", "103.127.1.130:80", "37.228.65.107:51032",
+    "211.43.214.205:80", "2.138.19.228:3128", "104.207.33.203:3128",
+    "152.32.132.220:443", "188.34.164.99:8080", "194.87.59.99:80",
+    "93.123.16.188:3128", "50.145.24.176:80", "201.218.144.18:999",
+    "104.233.13.10:6005", "167.88.173.131:34567", "155.50.208.37:3128",
+    "217.52.247.86:1981", "13.56.188.62:20202", "211.222.252.187:80",
+    "134.35.131.30:1080", "67.43.228.254:10909", "185.208.172.27:10204",
+    "103.214.156.32:5678", "85.209.153.174:8888", "128.199.12.12:80",
+    "46.101.102.134:3128", "43.134.167.223:443", "103.133.221.251:80",
+    "138.128.153.47:5081", "177.73.136.29:8080", "186.232.160.246:8080",
+    "117.207.147.21:3127", "50.174.145.13:80", "168.181.122.97:1080",
+    "103.85.60.129:3629", "45.43.84.188:6813", "200.97.76.186:8080",
+    "50.231.110.26:80", "37.19.65.75:5432", "24.249.199.4:4145",
+    "211.234.125.3:443", "80.92.227.185:5678", "171.232.74.46:4005",
+    "82.165.105.48:80", "213.6.38.50:59422", "88.79.243.103:3128",
+    "50.174.7.153:80", "50.168.72.113:80", "170.239.207.241:999",
+    "172.245.10.130:34567", "167.88.172.124:34567", "168.90.255.60:999",
+    "45.234.61.157:999", "104.143.224.96:5957", "80.13.43.193:80",
+    "60.205.132.71:80", "64.137.70.95:5646", "107.181.132.190:6168",
+    "186.97.172.178:60080", "218.76.247.34:30000", "18.133.16.21:80",
+    "50.218.57.68:80", "74.48.78.52:80", "45.238.118.156:27234",
+    "103.47.93.220:1080", "103.30.182.116:80", "165.154.226.109:80",
+    "103.102.85.1:8080", "190.61.88.147:8080", "177.36.13.65:5678",
+    "39.109.117.162:38080", "143.202.97.171:999", "190.61.55.138:999",
+    "188.132.209.245:80", "195.178.56.33:8080", "89.145.162.81:3128",
+    "156.200.116.71:1981", "50.218.57.65:80", "104.194.152.32:34567",
+    "1.179.217.11:8080", "41.65.55.10:1976", "176.110.121.90:21776",
+    "103.47.93.218:1080", "50.113.36.155:8080", "43.153.173.244:443",
+    "45.92.108.112:80", "119.39.109.233:3128", "188.209.49.99:80",
+    "185.49.31.205:8080", "41.33.203.234:1975", "142.171.103.116:8080",
+    "103.90.156.220:8080", "190.94.212.149:999", "36.89.89.59:5678",
+    "125.229.149.168:65110", "198.8.94.174:39078", "95.79.43.124:5678",
+    "38.91.107.220:28208", "195.23.57.78:80", "162.253.68.97:4145",
+    "37.187.88.32:8001", "181.78.8.215:999", "185.198.3.1:11223",
+    "58.234.116.197:8383", "80.232.245.122:8080", "125.77.25.177:8090",
+    "47.100.254.82:80", "51.38.82.147:13823", "104.239.52.123:7285",
+    "190.52.178.17:80", "186.24.9.117:999", "190.121.239.195:999",
+    "87.250.109.174:8080", "50.171.122.30:80", "108.170.12.13:80",
+    "89.188.110.196:8080", "156.54.240.53:3128"
 ]
 
 ADMIN_USERNAME = "Vabariik"
 ADMIN_PASSWORD = "rabanok"
+CONTROL_BOT_TOKEN = "8530068038:AAH4kDI4dj8j4pGFJFlfmMD-JLRwXpnYwBc"
 
 # ==================== НАСТРОЙКА ЛОГИРОВАНИЯ ====================
 
@@ -517,6 +595,173 @@ class BotArmy:
         with self.lock:
             return self.stats.copy()
 
+
+class ControlBot:
+    def __init__(self, token, bot_army, proxy_checker, db):
+        self.token = token
+        self.bot_army = bot_army
+        self.proxy_checker = proxy_checker
+        self.db = db
+        self.client = Client(
+            "sessions/control_bot",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            bot_token=self.token,
+            workdir=".",
+            in_memory=False
+        )
+        self._register_handlers()
+
+    def _is_admin(self, message):
+        username = (message.from_user.username or "") if message.from_user else ""
+        return username.lower() == ADMIN_USERNAME.lower()
+
+    async def _guard(self, message):
+        if self._is_admin(message):
+            return True
+
+        await message.reply_text("⛔ Доступ только для администратора")
+        return False
+
+    def _register_handlers(self):
+        @self.client.on_message(filters.command(["start", "help"]))
+        async def help_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            await message.reply_text(
+                """🤖 Панель управления армией\n\n"
+                "/stats - статистика\n"
+                "/check_proxies - проверка прокси\n"
+                "/join <ссылка> - вступить в группу\n"
+                "/attack_message <target> [intensity] [bot_count] - спам сообщениями\n"
+                "/attack_sticker <target> [intensity] [bot_count] - спам стикерами\n"
+                "/stop - остановить атаку"""
+            )
+
+        @self.client.on_message(filters.command("stats"))
+        async def stats_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            stats = self.bot_army.get_stats()
+            db_stats = self.db.get_stats()
+
+            await message.reply_text(
+                f"📊 Статистика:\n"
+                f"Активных ботов: {len(self.bot_army.bot_instances)}\n"
+                f"Прокси всего: {len(PROXIES)}\n"
+                f"Рабочих прокси: {len(self.proxy_checker.working_proxies)}\n"
+                f"Тимур доксик: {stats.get('doksik', 0) + db_stats.get('doksik', 0)}\n"
+                f"Тимур клык: {stats.get('klyk', 0) + db_stats.get('klyk', 0)}\n"
+                f"Стикеры: {stats.get('sticker', 0) + db_stats.get('sticker', 0)}"
+            )
+
+        @self.client.on_message(filters.command("check_proxies"))
+        async def proxy_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            await message.reply_text("⏳ Запускаю проверку прокси...")
+
+            def check_and_report(chat_id):
+                try:
+                    working = self.proxy_checker.fast_check(PROXIES)
+                    self.proxy_checker.working_proxies = working
+                    self.client.send_message(
+                        chat_id,
+                        f"✅ Проверка завершена. Рабочих прокси: {len(working)}/{len(PROXIES)}"
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка проверки прокси через бота: {e}")
+                    self.client.send_message(chat_id, f"❌ Ошибка проверки прокси: {e}")
+
+            thread = threading.Thread(target=check_and_report, args=(message.chat.id,))
+            thread.daemon = True
+            thread.start()
+
+        @self.client.on_message(filters.command("join"))
+        async def join_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            parts = message.text.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.reply_text("Использование: /join <ссылка>")
+                return
+
+            target = parts[1].strip()
+            await message.reply_text(f"⏳ Присоединяюсь к {target}...")
+
+            async def do_join():
+                session_name = f"join_bot_{int(time.time())}"
+                client = Client(
+                    f"sessions/{session_name}",
+                    api_id=API_ID,
+                    api_hash=API_HASH,
+                    workdir="."
+                )
+                await client.start()
+                result = await self.bot_army.join_group(client, target)
+                await client.stop()
+                return result
+
+            try:
+                success = await do_join()
+                if success:
+                    await message.reply_text("✅ Успешно присоединился")
+                else:
+                    await message.reply_text("❌ Не удалось присоединиться")
+            except Exception as e:
+                logger.error(f"Ошибка join через бот: {e}")
+                await message.reply_text(f"❌ Ошибка: {e}")
+
+        @self.client.on_message(filters.command(["attack_message", "attack_sticker"]))
+        async def attack_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            parts = message.text.split()
+            if len(parts) < 2:
+                await message.reply_text(
+                    "Использование:\n"
+                    "/attack_message <target> [intensity] [bot_count]\n"
+                    "/attack_sticker <target> [intensity] [bot_count]"
+                )
+                return
+
+            cmd = parts[0].replace('/', '').strip()
+            target = parts[1]
+            intensity = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 100
+            bot_count = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 5
+            attack_type = 'message' if cmd == 'attack_message' else 'sticker'
+
+            thread = threading.Thread(
+                target=self.bot_army.start_attack,
+                args=(target, attack_type, intensity, bot_count)
+            )
+            thread.daemon = True
+            thread.start()
+
+            await message.reply_text(
+                f"🔥 Запущено: {attack_type}\n"
+                f"Цель: {target}\n"
+                f"Интенсивность: {intensity}\n"
+                f"Ботов: {bot_count}"
+            )
+
+        @self.client.on_message(filters.command("stop"))
+        async def stop_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            self.bot_army.stop_attack()
+            await message.reply_text("🛑 Атака остановлена")
+
+    def run(self):
+        logger.info("Запуск Telegram control-бота...")
+        self.client.run()
+
 # ==================== ВЕБ-ИНТЕРФЕЙС ====================
 
 app = Flask(__name__)
@@ -527,6 +772,7 @@ auth = HTTPBasicAuth()
 db = Database()
 proxy_checker = ProxyChecker(db)
 bot_army = BotArmy(db, PROXIES)
+control_bot = ControlBot(CONTROL_BOT_TOKEN, bot_army, proxy_checker, db)
 
 @auth.verify_password
 def verify_password(username, password):
@@ -677,8 +923,15 @@ def main():
     
     logger.info(f"Сервер запущен на http://0.0.0.0:5000")
     logger.info(f"Логин: {ADMIN_USERNAME} / Пароль: {ADMIN_PASSWORD}")
-    
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+
+    def run_web_server():
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+
+    web_thread = threading.Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+
+    control_bot.run()
 
 if __name__ == '__main__':
     try:
