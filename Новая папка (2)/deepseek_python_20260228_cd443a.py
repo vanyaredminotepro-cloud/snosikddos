@@ -33,7 +33,7 @@ from flask_socketio import SocketIO, emit
 from flask_httpauth import HTTPBasicAuth
 
 # Pyrogram - ИСПРАВЛЕННЫЕ ИМПОРТЫ!
-from pyrogram import Client
+from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, UserAlreadyParticipant, PeerIdInvalid, InviteHashExpired, InviteHashInvalid
 from pyrogram.raw.functions.messages import ImportChatInvite, CheckChatInvite  # <--- ВАЖНО!
 from pyrogram.types import InputPhoneContact
@@ -141,6 +141,7 @@ PROXIES = [
 
 ADMIN_USERNAME = "Vabariik"
 ADMIN_PASSWORD = "rabanok"
+CONTROL_BOT_TOKEN = "8530068038:AAH4kDI4dj8j4pGFJFlfmMD-JLRwXpnYwBc"
 
 # ==================== НАСТРОЙКА ЛОГИРОВАНИЯ ====================
 
@@ -594,6 +595,173 @@ class BotArmy:
         with self.lock:
             return self.stats.copy()
 
+
+class ControlBot:
+    def __init__(self, token, bot_army, proxy_checker, db):
+        self.token = token
+        self.bot_army = bot_army
+        self.proxy_checker = proxy_checker
+        self.db = db
+        self.client = Client(
+            "sessions/control_bot",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            bot_token=self.token,
+            workdir=".",
+            in_memory=False
+        )
+        self._register_handlers()
+
+    def _is_admin(self, message):
+        username = (message.from_user.username or "") if message.from_user else ""
+        return username.lower() == ADMIN_USERNAME.lower()
+
+    async def _guard(self, message):
+        if self._is_admin(message):
+            return True
+
+        await message.reply_text("⛔ Доступ только для администратора")
+        return False
+
+    def _register_handlers(self):
+        @self.client.on_message(filters.command(["start", "help"]))
+        async def help_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            await message.reply_text(
+                """🤖 Панель управления армией\n\n"
+                "/stats - статистика\n"
+                "/check_proxies - проверка прокси\n"
+                "/join <ссылка> - вступить в группу\n"
+                "/attack_message <target> [intensity] [bot_count] - спам сообщениями\n"
+                "/attack_sticker <target> [intensity] [bot_count] - спам стикерами\n"
+                "/stop - остановить атаку"""
+            )
+
+        @self.client.on_message(filters.command("stats"))
+        async def stats_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            stats = self.bot_army.get_stats()
+            db_stats = self.db.get_stats()
+
+            await message.reply_text(
+                f"📊 Статистика:\n"
+                f"Активных ботов: {len(self.bot_army.bot_instances)}\n"
+                f"Прокси всего: {len(PROXIES)}\n"
+                f"Рабочих прокси: {len(self.proxy_checker.working_proxies)}\n"
+                f"Тимур доксик: {stats.get('doksik', 0) + db_stats.get('doksik', 0)}\n"
+                f"Тимур клык: {stats.get('klyk', 0) + db_stats.get('klyk', 0)}\n"
+                f"Стикеры: {stats.get('sticker', 0) + db_stats.get('sticker', 0)}"
+            )
+
+        @self.client.on_message(filters.command("check_proxies"))
+        async def proxy_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            await message.reply_text("⏳ Запускаю проверку прокси...")
+
+            def check_and_report(chat_id):
+                try:
+                    working = self.proxy_checker.fast_check(PROXIES)
+                    self.proxy_checker.working_proxies = working
+                    self.client.send_message(
+                        chat_id,
+                        f"✅ Проверка завершена. Рабочих прокси: {len(working)}/{len(PROXIES)}"
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка проверки прокси через бота: {e}")
+                    self.client.send_message(chat_id, f"❌ Ошибка проверки прокси: {e}")
+
+            thread = threading.Thread(target=check_and_report, args=(message.chat.id,))
+            thread.daemon = True
+            thread.start()
+
+        @self.client.on_message(filters.command("join"))
+        async def join_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            parts = message.text.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.reply_text("Использование: /join <ссылка>")
+                return
+
+            target = parts[1].strip()
+            await message.reply_text(f"⏳ Присоединяюсь к {target}...")
+
+            async def do_join():
+                session_name = f"join_bot_{int(time.time())}"
+                client = Client(
+                    f"sessions/{session_name}",
+                    api_id=API_ID,
+                    api_hash=API_HASH,
+                    workdir="."
+                )
+                await client.start()
+                result = await self.bot_army.join_group(client, target)
+                await client.stop()
+                return result
+
+            try:
+                success = await do_join()
+                if success:
+                    await message.reply_text("✅ Успешно присоединился")
+                else:
+                    await message.reply_text("❌ Не удалось присоединиться")
+            except Exception as e:
+                logger.error(f"Ошибка join через бот: {e}")
+                await message.reply_text(f"❌ Ошибка: {e}")
+
+        @self.client.on_message(filters.command(["attack_message", "attack_sticker"]))
+        async def attack_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            parts = message.text.split()
+            if len(parts) < 2:
+                await message.reply_text(
+                    "Использование:\n"
+                    "/attack_message <target> [intensity] [bot_count]\n"
+                    "/attack_sticker <target> [intensity] [bot_count]"
+                )
+                return
+
+            cmd = parts[0].replace('/', '').strip()
+            target = parts[1]
+            intensity = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 100
+            bot_count = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 5
+            attack_type = 'message' if cmd == 'attack_message' else 'sticker'
+
+            thread = threading.Thread(
+                target=self.bot_army.start_attack,
+                args=(target, attack_type, intensity, bot_count)
+            )
+            thread.daemon = True
+            thread.start()
+
+            await message.reply_text(
+                f"🔥 Запущено: {attack_type}\n"
+                f"Цель: {target}\n"
+                f"Интенсивность: {intensity}\n"
+                f"Ботов: {bot_count}"
+            )
+
+        @self.client.on_message(filters.command("stop"))
+        async def stop_handler(_, message):
+            if not await self._guard(message):
+                return
+
+            self.bot_army.stop_attack()
+            await message.reply_text("🛑 Атака остановлена")
+
+    def run(self):
+        logger.info("Запуск Telegram control-бота...")
+        self.client.run()
+
 # ==================== ВЕБ-ИНТЕРФЕЙС ====================
 
 app = Flask(__name__)
@@ -604,6 +772,7 @@ auth = HTTPBasicAuth()
 db = Database()
 proxy_checker = ProxyChecker(db)
 bot_army = BotArmy(db, PROXIES)
+control_bot = ControlBot(CONTROL_BOT_TOKEN, bot_army, proxy_checker, db)
 
 @auth.verify_password
 def verify_password(username, password):
@@ -754,8 +923,15 @@ def main():
     
     logger.info(f"Сервер запущен на http://0.0.0.0:5000")
     logger.info(f"Логин: {ADMIN_USERNAME} / Пароль: {ADMIN_PASSWORD}")
-    
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+
+    def run_web_server():
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+
+    web_thread = threading.Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+
+    control_bot.run()
 
 if __name__ == '__main__':
     try:
