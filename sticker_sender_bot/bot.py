@@ -155,6 +155,41 @@ def _prepare_stickers(stickers: list[str]) -> list[str]:
     return valid
 
 
+
+
+def _check_group_permissions(chat_id: int) -> None:
+    """
+    Проверяет базовые права группы, которые могут блокировать отправку стикеров участниками.
+    Для обычных пользователей это определяется chat.permissions.can_send_other_messages.
+    """
+    try:
+        payload = _bot_api_request("getChat", data={"chat_id": chat_id})
+    except Exception as exc:
+        print(f"[WARN] Не удалось получить getChat для проверки прав: {exc}")
+        return
+
+    chat = payload.get("result", {})
+    title = chat.get("title") or chat.get("username") or str(chat_id)
+    permissions = chat.get("permissions") or {}
+
+    can_send_other = permissions.get("can_send_other_messages")
+    if can_send_other is False:
+        print(
+            "[WARN] В группе для участников отключено can_send_other_messages. "
+            "Обычно это блокирует отправку стикеров/гифок обычными пользователями."
+        )
+        print(
+            "[HINT] Включите в настройках группы право отправлять стикеры "
+            "(или снимите ограничение у конкретных пользователей)."
+        )
+    elif can_send_other is True:
+        print(f"[OK] Права группы ({title}) позволяют участникам отправлять стикеры.")
+    else:
+        print(
+            "[INFO] Не удалось однозначно определить право can_send_other_messages "
+            "(возможны индивидуальные ограничения пользователей)."
+        )
+
 def send_sticker(chat_id: int, sticker: str) -> None:
     _bot_api_request("sendSticker", data={"chat_id": chat_id, "sticker": sticker})
 
@@ -171,6 +206,7 @@ def main() -> None:
         )
 
     print(f"[OK] Целевая группа: {chat_id}")
+    _check_group_permissions(chat_id)
 
     while True:
         sticker = random.choice(stickers)
