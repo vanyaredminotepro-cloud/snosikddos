@@ -61,10 +61,17 @@ def _bot_api_request(method: str, *, data: dict[str, Any] | None = None) -> dict
         data=data,
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
-    response.raise_for_status()
-    payload: dict[str, Any] = response.json()
-    if not payload.get("ok"):
-        raise RuntimeError(f"{method} вернул ошибку: {payload}")
+    try:
+        payload: dict[str, Any] = response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise RuntimeError(f"{method} вернул не-JSON ответ: {response.text[:300]}")
+
+    if response.status_code >= 400 or not payload.get("ok"):
+        description = payload.get("description", "unknown Telegram error")
+        error_code = payload.get("error_code", response.status_code)
+        raise RuntimeError(f"{method} error {error_code}: {description}")
+
     return payload
 
 
@@ -110,6 +117,44 @@ def _resolve_target_chat_id() -> int:
     return detected_chat_id
 
 
+def _is_probably_sticker_file_id(value: str) -> bool:
+    """
+    Быстрая фильтрация невалидных значений для sendSticker.
+    Ожидаем Bot API file_id (обычно начинается с CAAC...).
+    """
+    if not isinstance(value, str):
+        return False
+    if len(value) < 20:
+        return False
+    if value.isdigit() or value.startswith("temp_"):
+        return False
+    return value.startswith("CA")
+
+
+def _prepare_stickers(stickers: list[str]) -> list[str]:
+    valid: list[str] = []
+    skipped = 0
+    for sticker in stickers:
+        if _is_probably_sticker_file_id(sticker):
+            valid.append(sticker)
+        else:
+            skipped += 1
+
+    if skipped:
+        print(
+            f"[WARN] Пропущено {skipped} невалидных id стикера "
+            "(например числовые id или temp_* из другой системы)."
+        )
+
+    if not valid:
+        raise ValueError(
+            "В STICKERS не осталось валидных Bot API file_id. "
+            "Нужны строки формата CAAC..."
+        )
+
+    return valid
+
+
 def send_sticker(chat_id: int, sticker: str) -> None:
     _bot_api_request("sendSticker", data={"chat_id": chat_id, "sticker": sticker})
 
@@ -117,6 +162,7 @@ def send_sticker(chat_id: int, sticker: str) -> None:
 def main() -> None:
     _check_bot()
     chat_id = _resolve_target_chat_id()
+    stickers = _prepare_stickers(STICKERS)
 
     if chat_id > 0:
         print(
@@ -127,12 +173,17 @@ def main() -> None:
     print(f"[OK] Целевая группа: {chat_id}")
 
     while True:
-        sticker = random.choice(STICKERS)
+        sticker = random.choice(stickers)
         try:
             send_sticker(chat_id, sticker)
             print(f"[SENT] {sticker}")
         except Exception as exc:
-            print(f"[WARN] Ошибка отправки: {exc}")
+            print(f"[WARN] Ошибка отправки {sticker}: {exc}")
+            if "chat not found" in str(exc).lower() or "not enough rights" in str(exc).lower():
+                print(
+                    "[HINT] Проверьте, что bot добавлен в группу, chat_id верный (-100...), "
+                    "и у бота есть права отправки сообщений/стикеров."
+                )
 
         time.sleep(SEND_INTERVAL_SECONDS)
 
