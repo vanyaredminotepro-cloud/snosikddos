@@ -1,53 +1,38 @@
+import asyncio
 import random
 import time
 from typing import Any
 
 import requests
+from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
+from telethon.tl.functions.messages import GetStickerSetRequest
+from telethon.tl.types import InputStickerSetShortName
 
 # === НАСТРОЙКИ ===
+MODE = "session"  # "session" или "bot_api"
+
+# Для режима session (пользовательская сессия)
+API_ID = 23695534
+API_HASH = "08f5b069bb4fd8505b98a6b57f857868"
+SESSION_NAME = "user_sender"
+TARGET_CHAT: int | str = "@your_group_username"  # можно -100..., @username, t.me/username
+STICKER_SET_SHORT_NAME = "TgEmoji"
+
+# Для режима bot_api
 BOT_TOKEN = "8779722671:AAHD1Dj5guQA3nRU504y4lTtqOsc7m4YYCA"
 GROUP_LINK = "https://t.me/+vuft45R2wW1kNjFi"  # только для справки
-# Если None, бот попробует взять chat_id из последних getUpdates
 GROUP_CHAT_ID: int | None = None
+
 SEND_INTERVAL_SECONDS = 5
 REQUEST_TIMEOUT_SECONDS = 30
 # =================
 
+# Bot API file_id (только для MODE="bot_api")
 STICKERS = [
     "CAACAgIAAxkBAAEQpN5poyqxZEIu0ckIDNuBjXQhJx_HdAACVpcAAg5nGUkME8ZzJeb0CDoE",
     "CAACAgIAAxkBAAEQpOBpoyqzX4T9RbGlTs7bRHTmbJwFYgACPYsAAuRdGUkgLA-N4YfYdDoE",
     "CAACAgIAAxkBAAEQpOFpoyqzD1frms68wDUwg1tEtHmDhwACSJQAAuGJGEnTulOT2C5j8joE",
-    "CAACAgIAAxkBAAEQpORpoyq1EZV8Fsxo0uLmjt3xy84lVgAC_JIAAknfGUldvbWxv9kAAbI6BA",
-    "CAACAgIAAxkBAAEQpOVpoyq2gJdDtrwPHzXwqCW4vuOingACsZwAAobuGUnwuJ2bcy6RGjoE",
-    "CAACAgIAAxkBAAEQpOdpoyq3LPSJYlch-ablDAPEzNqRLgACaJkAAo4YGUkDlrZtEoqKBToE",
-    "CAACAgIAAxkBAAEQpOlpoyq31gVAYiEyDDEUHRJHeAABkfEAAn2TAAIzchlJX9dYGmkLJuk6BA",
-    "CAACAgIAAxkBAAEQpOppoyq44gABS6hm0zToZ6kCEpXiW2wAAvKVAAJD0RhJb62ix8LfkEk6BA",
-    "CAACAgIAAxkBAAEQpO5poyq8PLg5jimuluOhcC8juls72wACA44AAshzGUmQND1EN1iYkToE",
-    "CAACAgIAAxkBAAEQpPBpoyq-ZJKfU8LvMjNrP8TT-4nZ9QACJJsAAiMUEUkQXFu4GQWIlDoE",
-    "CAACAgIAAxkBAAEQpPJpoyrA3_K8SGVeRsBn0l_F_vuY5wACuqMAArDVGEm-cA_CwWqJEzoE",
-    "CAACAgIAAxkBAAEQpPRpoyrCttuKVpiyYChrIwWRq9QvHwACqpsAAraoGUktcd9Nf6BafDoE",
-    "CAACAgIAAxkBAAEQpPZpoyrEVkOZClGyCZCSbqiadkEN4gAC1IUAArxPGEkrWoqWcU3kmjoE",
-    "CAACAgIAAxkBAAEQpPhpoyrGtEGmOrmbtdBbQBAyxM8rlAACGooAAp5NGEkly7oI9QXg-DoE",
-    "CAACAgIAAxkBAAEQpPppoyrHFQVB_17H5XjodxHEtYJfggACaZQAAq0xEUkE1vTgRLaCuDoE",
-    "CAACAgIAAxkBAAEQpPxpoyrJ8Iy1PelVoRTFrKfJd12puQACmY4AAj6AGEmnrdRkLcSOhjoE",
-    "CAACAgIAAxkBAAEQpP5poyrL6hdkzzSVYHYdgPiyxGBDIgAC3JQAAgjpGUkC2UQiIqI1xDoE",
-    "CAACAgIAAxkBAAEQpQABaaMqze5xm_PQ0lCQtJ4jrTi8AnAAAgGVAAJMmhlJ8IYS6bgXQy86BA",
-    "CAACAgIAAxkBAAEQpQJpoyrOrfwuwIAyetSLLtPleHSsgwACd5AAAm8rGUmf91_vj4gZcjoE",
-    "CAACAgIAAxkBAAEQpQRpoyrQ7bQXPBJjT2Eo9zQ5XOlb9AAC85wAAo_KEEmNhFLeQmWRNjoE",
-    "CAACAgIAAxkBAAEQpQhpoyrnsJ__IBOLJRr6BFQ_VioAAVQAArOVAAK_xxhJEqYeGBvf1zs6BA",
-    "CAACAgIAAxkBAAEQpQppoyrpFbl76Yra8YH8ITHkan97YQACfJkAAl44GElU-DAPZAS2FDoE",
-    "CAACAgIAAxkBAAEQpQxpoyrs6A6WUKLqNuV7el6n690LPwAC05wAAu0gGElwj3cXVT0U6zoE",
-    "CAACAgIAAxkBAAEQpQ5poyrttnJkKyRfmlTXpi8J0sSh1wACVZMAAod7GUlQUb6lMhsdGzoE",
-    "CAACAgIAAxkBAAEQpRBpoyrvbrvecpErJhv9XZXewYroMQACA5MAAoHeGEm8tLlVyFZJgDoE",
-    "CAACAgIAAxkBAAEQpRJpoyrxG6tZ9nToky6iKXKsw294sAACFokAAlLOGEkTgp6ysblaMDoE",
-    "CAACAgIAAxkBAAEQpRRpoyryj3Oo90ePZ8AvGsd0EckH9AACNJwAAj2oGUmqRelGihFpvDoE",
-    "CAACAgIAAxkBAAEQpRZpoyr0ws3tSv85JdafXnZUVk0lhgACiZUAAl6HGUnEM4QqTr6K7ToE",
-    "CAACAgIAAxkBAAEQpRhpoyr1qqhmYkOwHqX0VqzyC-oImQACfY0AAjHIGEn1pmuvN4z9QjoE",
-    "CAACAgIAAxkBAAEQpRppoyr3c58ifW8eDjlXkGIhiNQcYQACMZ0AArOlGEnSuBSKlPt3TzoE",
-    "CAACAgIAAxkBAAEQpRxpoyr5fb3gqkfCP_7hExHMj5b9GgAC1pAAApjQGEkfaa-mw_mxZzoE",
-    "CAACAgIAAxkBAAEQpR5poyr6zq13Qxu7_rUbJxj9WBWl3wACwpcAAsScGUkIvnOUS8nnoToE",
-    "CAACAgIAAxkBAAEQpSNpoytfOizdITYqMfpBp8nJgg7B7gACkKIAAqVUGUloH6bbGynL3DoE",
-    "CAACAgIAAxkBAAEQpSVpoyth9LszFXuQtyGTNFb8MvarfwACjo8AAss8GUmcpKlwsEZY9DoE",
 ]
 
 
@@ -118,10 +103,6 @@ def _resolve_target_chat_id() -> int:
 
 
 def _is_probably_sticker_file_id(value: str) -> bool:
-    """
-    Быстрая фильтрация невалидных значений для sendSticker.
-    Ожидаем Bot API file_id (обычно начинается с CAAC...).
-    """
     if not isinstance(value, str):
         return False
     if len(value) < 20:
@@ -155,58 +136,16 @@ def _prepare_stickers(stickers: list[str]) -> list[str]:
     return valid
 
 
-
-
-def _check_group_permissions(chat_id: int) -> None:
-    """
-    Проверяет базовые права группы, которые могут блокировать отправку стикеров участниками.
-    Для обычных пользователей это определяется chat.permissions.can_send_other_messages.
-    """
-    try:
-        payload = _bot_api_request("getChat", data={"chat_id": chat_id})
-    except Exception as exc:
-        print(f"[WARN] Не удалось получить getChat для проверки прав: {exc}")
-        return
-
-    chat = payload.get("result", {})
-    title = chat.get("title") or chat.get("username") or str(chat_id)
-    permissions = chat.get("permissions") or {}
-
-    can_send_other = permissions.get("can_send_other_messages")
-    if can_send_other is False:
-        print(
-            "[WARN] В группе для участников отключено can_send_other_messages. "
-            "Обычно это блокирует отправку стикеров/гифок обычными пользователями."
-        )
-        print(
-            "[HINT] Включите в настройках группы право отправлять стикеры "
-            "(или снимите ограничение у конкретных пользователей)."
-        )
-    elif can_send_other is True:
-        print(f"[OK] Права группы ({title}) позволяют участникам отправлять стикеры.")
-    else:
-        print(
-            "[INFO] Не удалось однозначно определить право can_send_other_messages "
-            "(возможны индивидуальные ограничения пользователей)."
-        )
-
 def send_sticker(chat_id: int, sticker: str) -> None:
     _bot_api_request("sendSticker", data={"chat_id": chat_id, "sticker": sticker})
 
 
-def main() -> None:
+def run_bot_api_mode() -> None:
     _check_bot()
     chat_id = _resolve_target_chat_id()
     stickers = _prepare_stickers(STICKERS)
 
-    if chat_id > 0:
-        print(
-            "[WARN] chat_id положительный. Для групп обычно используется отрицательный id "
-            "(например -100...). Проверьте, что это точно id группы, а не пользователя/бота."
-        )
-
     print(f"[OK] Целевая группа: {chat_id}")
-    _check_group_permissions(chat_id)
 
     while True:
         sticker = random.choice(stickers)
@@ -215,14 +154,95 @@ def main() -> None:
             print(f"[SENT] {sticker}")
         except Exception as exc:
             print(f"[WARN] Ошибка отправки {sticker}: {exc}")
-            if "chat not found" in str(exc).lower() or "not enough rights" in str(exc).lower():
-                print(
-                    "[HINT] Проверьте, что bot добавлен в группу, chat_id верный (-100...), "
-                    "и у бота есть права отправки сообщений/стикеров."
-                )
 
         time.sleep(SEND_INTERVAL_SECONDS)
 
 
+def _normalize_target_chat(value: str) -> int | str:
+    value = value.strip()
+    if value.startswith("https://t.me/"):
+        value = "@" + value.removeprefix("https://t.me/")
+    if value.startswith("@"):
+        return value
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+async def connect_or_login_session() -> TelegramClient:
+    client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+    await client.connect()
+
+    if await client.is_user_authorized():
+        me = await client.get_me()
+        print(f"[OK] Сессия активна: {me.first_name or me.username or me.id}")
+        return client
+
+    phone = input("Введите номер телефона (например +79991234567): ").strip()
+    await client.send_code_request(phone)
+    code = input("Введите код из Telegram: ").strip()
+
+    try:
+        await client.sign_in(phone=phone, code=code)
+    except SessionPasswordNeededError:
+        password = input("Введите 2FA-пароль: ").strip()
+        await client.sign_in(password=password)
+
+    me = await client.get_me()
+    print(f"[OK] Сессия подключена: {me.first_name or me.username or me.id}")
+    return client
+
+
+async def _load_stickers_from_set(client: TelegramClient) -> list[Any]:
+    result = await client(GetStickerSetRequest(stickerset=InputStickerSetShortName(STICKER_SET_SHORT_NAME), hash=0))
+    documents = list(result.documents or [])
+    if not documents:
+        raise ValueError(
+            f"Стикерпак {STICKER_SET_SHORT_NAME} пуст или недоступен. "
+            "Проверьте short_name у стикерпака."
+        )
+    return documents
+
+
+async def run_session_mode() -> None:
+    client = await connect_or_login_session()
+    try:
+        target_chat = _normalize_target_chat(str(TARGET_CHAT))
+        entity = await client.get_entity(target_chat)
+        stickers = await _load_stickers_from_set(client)
+        print(f"[OK] Чат найден: {target_chat}")
+        print(f"[OK] Загружено стикеров из пака {STICKER_SET_SHORT_NAME}: {len(stickers)}")
+
+        while True:
+            sticker_doc = random.choice(stickers)
+            try:
+                await client.send_file(entity, sticker_doc)
+                print("[SENT] sticker(document)")
+            except Exception as exc:
+                print(f"[WARN] Ошибка отправки через сессию: {exc}")
+            await asyncio.sleep(SEND_INTERVAL_SECONDS)
+    finally:
+        await client.disconnect()
+
+
+async def main() -> None:
+    print("1) Подключить/обновить сессию")
+    print("2) Запустить отправку через сессию")
+    print("3) Запустить отправку через bot api")
+    choice = input("Выберите действие [1/2/3]: ").strip()
+
+    if choice == "1":
+        client = await connect_or_login_session()
+        await client.disconnect()
+        print("[OK] Сессия сохранена. Теперь можно запускать отправку.")
+        return
+
+    if choice == "2" or MODE == "session":
+        await run_session_mode()
+    else:
+        run_bot_api_mode()
+
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
