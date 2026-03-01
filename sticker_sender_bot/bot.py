@@ -1,14 +1,14 @@
 import asyncio
 import random
 from telethon import TelegramClient
-from telethon.errors import UserAlreadyParticipantError
-from telethon.tl.functions.messages import ImportChatInviteRequest, CheckChatInviteRequest
 
 # === НАСТРОЙКИ ===
 API_ID = 23695534
 API_HASH = "08f5b069bb4fd8505b98a6b57f857868"
 BOT_TOKEN = "8779722671:AAHD1Dj5guQA3nRU504y4lTtqOsc7m4YYCA"
 GROUP_LINK = "https://t.me/+vuft45R2wW1kNjFi"
+# Для приватных групп укажите chat id вручную (например: -1001234567890)
+GROUP_CHAT_ID = None
 SEND_INTERVAL_SECONDS = 5
 # =================
 
@@ -50,25 +50,32 @@ STICKERS = [
 ]
 
 
-def _extract_invite_hash(link: str) -> str:
-    if "+" in link:
-        return link.split("+", maxsplit=1)[1]
-    return link.rsplit("/", maxsplit=1)[-1]
+def _normalize_group_target(group_link: str):
+    if group_link.startswith("https://t.me/"):
+        slug = group_link.removeprefix("https://t.me/").strip("/")
+        if slug.startswith("+"):
+            return None
+        return slug
+
+    if group_link.startswith("@"):
+        return group_link
+
+    return group_link
 
 
-async def resolve_group(client: TelegramClient, group_link: str):
-    invite_hash = _extract_invite_hash(group_link)
+async def resolve_group(client: TelegramClient):
+    if GROUP_CHAT_ID is not None:
+        return await client.get_entity(GROUP_CHAT_ID)
 
-    try:
-        await client(CheckChatInviteRequest(invite_hash))
-        await client(ImportChatInviteRequest(invite_hash))
-        print("[OK] Бот присоединился к группе по инвайт-ссылке.")
-    except UserAlreadyParticipantError:
-        pass
-    except Exception as exc:
-        print(f"[WARN] Не удалось импортировать инвайт: {exc}")
+    normalized_target = _normalize_group_target(GROUP_LINK)
+    if normalized_target is None:
+        raise ValueError(
+            "Для ботов Telegram приватные invite-ссылки (t.me/+...) недоступны через API. "
+            "Добавьте бота в группу вручную и укажите GROUP_CHAT_ID (например -100...) "
+            "или публичный @username/https://t.me/<username>."
+        )
 
-    return await client.get_entity(group_link)
+    return await client.get_entity(normalized_target)
 
 
 async def main() -> None:
@@ -76,7 +83,7 @@ async def main() -> None:
     await client.start(bot_token=BOT_TOKEN)
     print("[OK] Бот запущен.")
 
-    chat = await resolve_group(client, GROUP_LINK)
+    chat = await resolve_group(client)
     print(f"[OK] Целевая группа определена: {chat.id}")
 
     while True:
