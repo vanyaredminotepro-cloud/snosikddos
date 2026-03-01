@@ -7,8 +7,8 @@ import requests
 # === НАСТРОЙКИ ===
 BOT_TOKEN = "8779722671:AAHD1Dj5guQA3nRU504y4lTtqOsc7m4YYCA"
 GROUP_LINK = "https://t.me/+vuft45R2wW1kNjFi"  # только для справки
-# ОБЯЗАТЕЛЬНО: chat_id группы, например -1001234567890
-GROUP_CHAT_ID = None
+# Если None, бот попробует взять chat_id из последних getUpdates
+GROUP_CHAT_ID: int | None = None
 SEND_INTERVAL_SECONDS = 5
 REQUEST_TIMEOUT_SECONDS = 30
 # =================
@@ -55,41 +55,81 @@ def _api_url(method: str) -> str:
     return f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
 
-def _check_bot() -> None:
-    response = requests.get(_api_url("getMe"), timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    payload: dict[str, Any] = response.json()
-    if not payload.get("ok"):
-        raise RuntimeError(f"Ошибка getMe: {payload}")
-
-
-def send_sticker(chat_id: int, sticker: str) -> None:
+def _bot_api_request(method: str, *, data: dict[str, Any] | None = None) -> dict[str, Any]:
     response = requests.post(
-        _api_url("sendSticker"),
-        data={"chat_id": chat_id, "sticker": sticker},
+        _api_url(method),
+        data=data,
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     payload: dict[str, Any] = response.json()
     if not payload.get("ok"):
-        raise RuntimeError(f"sendSticker вернул ошибку: {payload}")
+        raise RuntimeError(f"{method} вернул ошибку: {payload}")
+    return payload
+
+
+def _check_bot() -> None:
+    payload = _bot_api_request("getMe")
+    username = payload["result"].get("username", "<unknown>")
+    print(f"[OK] Бот запущен: @{username}")
+
+
+def _detect_group_chat_id_from_updates() -> int | None:
+    payload = _bot_api_request("getUpdates", data={"limit": 100})
+    updates = payload.get("result", [])
+
+    for update in reversed(updates):
+        for key in ("message", "channel_post", "edited_message", "edited_channel_post"):
+            message = update.get(key)
+            if not message:
+                continue
+
+            chat = message.get("chat", {})
+            chat_type = chat.get("type")
+            if chat_type in {"group", "supergroup"}:
+                chat_id = chat.get("id")
+                if isinstance(chat_id, int):
+                    return chat_id
+
+    return None
+
+
+def _resolve_target_chat_id() -> int:
+    if GROUP_CHAT_ID is not None:
+        return GROUP_CHAT_ID
+
+    detected_chat_id = _detect_group_chat_id_from_updates()
+    if detected_chat_id is None:
+        raise ValueError(
+            "GROUP_CHAT_ID не задан и из getUpdates не удалось определить группу. "
+            "Добавьте бота в группу, отправьте туда любое сообщение и запустите снова, "
+            "или задайте GROUP_CHAT_ID вручную (обычно начинается с -100...)."
+        )
+
+    print(f"[OK] GROUP_CHAT_ID автоматически определён из getUpdates: {detected_chat_id}")
+    return detected_chat_id
+
+
+def send_sticker(chat_id: int, sticker: str) -> None:
+    _bot_api_request("sendSticker", data={"chat_id": chat_id, "sticker": sticker})
 
 
 def main() -> None:
-    if GROUP_CHAT_ID is None:
-        raise ValueError(
-            "Укажите GROUP_CHAT_ID (например -1001234567890). "
-            "Для приватной ссылки t.me/+... chat_id обязателен."
+    _check_bot()
+    chat_id = _resolve_target_chat_id()
+
+    if chat_id > 0:
+        print(
+            "[WARN] chat_id положительный. Для групп обычно используется отрицательный id "
+            "(например -100...). Проверьте, что это точно id группы, а не пользователя/бота."
         )
 
-    _check_bot()
-    print("[OK] Бот запущен.")
-    print(f"[OK] Целевая группа: {GROUP_CHAT_ID}")
+    print(f"[OK] Целевая группа: {chat_id}")
 
     while True:
         sticker = random.choice(STICKERS)
         try:
-            send_sticker(GROUP_CHAT_ID, sticker)
+            send_sticker(chat_id, sticker)
             print(f"[SENT] {sticker}")
         except Exception as exc:
             print(f"[WARN] Ошибка отправки: {exc}")
