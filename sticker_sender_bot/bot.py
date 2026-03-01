@@ -1,15 +1,16 @@
-import asyncio
 import random
-from telethon import TelegramClient
+import time
+from typing import Any
+
+import requests
 
 # === НАСТРОЙКИ ===
-API_ID = 23695534
-API_HASH = "08f5b069bb4fd8505b98a6b57f857868"
 BOT_TOKEN = "8779722671:AAHD1Dj5guQA3nRU504y4lTtqOsc7m4YYCA"
-GROUP_LINK = "https://t.me/+vuft45R2wW1kNjFi"
-# Для приватных групп укажите chat id вручную (например: -1001234567890)
+GROUP_LINK = "https://t.me/+vuft45R2wW1kNjFi"  # только для справки
+# ОБЯЗАТЕЛЬНО: chat_id группы, например -1001234567890
 GROUP_CHAT_ID = None
 SEND_INTERVAL_SECONDS = 5
+REQUEST_TIMEOUT_SECONDS = 30
 # =================
 
 STICKERS = [
@@ -50,48 +51,51 @@ STICKERS = [
 ]
 
 
-def _normalize_group_target(group_link: str):
-    if group_link.startswith("https://t.me/"):
-        slug = group_link.removeprefix("https://t.me/").strip("/")
-        if slug.startswith("+"):
-            return None
-        return slug
-
-    if group_link.startswith("@"):
-        return group_link
-
-    return group_link
+def _api_url(method: str) -> str:
+    return f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
 
-async def resolve_group(client: TelegramClient):
-    if GROUP_CHAT_ID is not None:
-        return await client.get_entity(GROUP_CHAT_ID)
+def _check_bot() -> None:
+    response = requests.get(_api_url("getMe"), timeout=REQUEST_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    payload: dict[str, Any] = response.json()
+    if not payload.get("ok"):
+        raise RuntimeError(f"Ошибка getMe: {payload}")
 
-    normalized_target = _normalize_group_target(GROUP_LINK)
-    if normalized_target is None:
+
+def send_sticker(chat_id: int, sticker: str) -> None:
+    response = requests.post(
+        _api_url("sendSticker"),
+        data={"chat_id": chat_id, "sticker": sticker},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload: dict[str, Any] = response.json()
+    if not payload.get("ok"):
+        raise RuntimeError(f"sendSticker вернул ошибку: {payload}")
+
+
+def main() -> None:
+    if GROUP_CHAT_ID is None:
         raise ValueError(
-            "Для ботов Telegram приватные invite-ссылки (t.me/+...) недоступны через API. "
-            "Добавьте бота в группу вручную и укажите GROUP_CHAT_ID (например -100...) "
-            "или публичный @username/https://t.me/<username>."
+            "Укажите GROUP_CHAT_ID (например -1001234567890). "
+            "Для приватной ссылки t.me/+... chat_id обязателен."
         )
 
-    return await client.get_entity(normalized_target)
-
-
-async def main() -> None:
-    client = TelegramClient("sticker_sender_bot", API_ID, API_HASH)
-    await client.start(bot_token=BOT_TOKEN)
+    _check_bot()
     print("[OK] Бот запущен.")
-
-    chat = await resolve_group(client)
-    print(f"[OK] Целевая группа определена: {chat.id}")
+    print(f"[OK] Целевая группа: {GROUP_CHAT_ID}")
 
     while True:
         sticker = random.choice(STICKERS)
-        await client.send_file(chat, sticker)
-        print(f"[SENT] {sticker}")
-        await asyncio.sleep(SEND_INTERVAL_SECONDS)
+        try:
+            send_sticker(GROUP_CHAT_ID, sticker)
+            print(f"[SENT] {sticker}")
+        except Exception as exc:
+            print(f"[WARN] Ошибка отправки: {exc}")
+
+        time.sleep(SEND_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
